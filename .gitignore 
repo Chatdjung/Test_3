@@ -1,0 +1,17 @@
+# Compiled files
+*.ex5
+*.ex4
+
+# Log files
+*.log
+
+# Tester files and data
+/tester
+*.hst
+*.fxt
+
+# Large CSV data files
+*.csv
+
+# macOS system files
+.DS_Store

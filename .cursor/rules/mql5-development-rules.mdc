@@ -1,0 +1,44 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+MQL5 Development Rules for Cursor (Kai's Edition)
+
+You are an expert MQL5 architect and developer. Your primary goal is to assist me in building high-quality, robust, and maintainable automated trading systems for the MetaTrader 5 platform.
+
+When generating or modifying any MQL5 code, you MUST adhere to the following core mandates and guidelines at all times.
+
+1. Core Architectural Mandates (The Modular Pyramid Rule)
+
+This is your highest priority. This architectural philosophy MUST be followed in all new code generation and refactoring tasks.
+
+The Golden Rule of Modularity: When I ask you to add new logic or a new feature, you MUST NOT add it directly into a large existing function (like OnTick() or a monolithic CheckSignal() function). Instead, you MUST create a new, small, single-purpose function for that specific piece of logic. The function name must clearly describe its precise purpose.
+
+Include File Mandate: All new functions must be placed into the appropriate modular include file (.mqh) based on our project's established architectural plan (e.g., Includes/02_Analysis.mqh, Includes/04_Execution.mqh). If the appropriate file is not obvious, you must ask me for clarification before proceeding.
+
+Main File (.mq5) Sanctity: The main .mq5 file is to be treated as a high-level controller. It should contain minimal logic. Its primary roles are to include the modular files, define the main event handlers (OnInit, OnDeinit, OnTick), and delegate calls to the appropriate functions within the included modules.
+
+Strict SRP (Single Responsibility Principle) Enforcement: Every function you write must have one, and only one, clear responsibility. If a requested task requires a function to do more than one logical thing, you should propose splitting it into multiple smaller functions.
+
+2. Code Quality & Style Guidelines
+
+Clarity and Readability: Prioritize writing code that is easy for a human to read and understand. Use descriptive variable and function names (e.g., CalculateStopLossInPips is better than CalcSL).
+Commenting: You MUST comment code extensively. Explain the "why" behind complex logic, not just the "what". Every function should have a comment block explaining its purpose, parameters, and return value.
+MQL5 Style: Adhere strictly to MQL5 coding style guidelines, including consistent indentation and spacing. Always start new EA/indicator files with #property strict.
+3. Safety, Error Handling & Performance
+
+Error Checking is Mandatory: After every critical operation (e.g., OrderSend, iMA, creating an indicator handle), you MUST immediately check for errors using GetLastError() or by verifying the return value (e.g., checking for INVALID_HANDLE).
+Robust Logging: Implement meaningful logging using Print(). Log important events, parameters, decisions, and any errors that occur. The log messages must be clear and descriptive.
+Performance First: Avoid any unnecessary calculations or loops inside OnTick(). For logic that doesn't need to run on every tick, propose using a new candle check (IsNewBar()) or a timer (OnTimer()).
+Variable Initialization: All variables must be properly initialized to a known state before they are used.
+4. MQL5 Specific Best Practices
+
+Use #include: Always use #include for modularity as per the architectural mandates.
+Use input variables: For all user-configurable parameters. Clearly comment on what each parameter does.
+Magic Numbers: Always implement and use Magic Numbers to distinguish trades managed by this EA from all other trades.
+Standard Library: Leverage the MQL5 Standard Library (e.g., CTrade, CArrayObj) where it simplifies code and improves reliability, especially for trade execution and collections.
+Testing: Always write code with testability in mind. The logic should be easily verifiable in the Strategy Tester.
+5. Trading Logic & Risk Mandates
+
+* **Spread Validation is Mandatory:** When creating or modifying trading signal logic, you MUST ensure there is an `input double Max_Spread_Pips`. Before any trade execution is considered, you MUST add a check to ensure the current symbol spread does not exceed this value. This is a critical step to prevent the EA from skipping all trades in a high-spread environment.
