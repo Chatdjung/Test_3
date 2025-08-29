@@ -1166,11 +1166,78 @@ Print("Max Drawdown: ", max_drawdown, "%");
 
 ---
 
+## **📊 CSV Logging & Multi-Timeframe RSI Issues (2025-01-14)**
+
+### **ปัญหา: ExecutionHistory.csv ขาด RSI Columns**
+
+**ปัญหา:** ExecutionHistory.csv ไม่มีคอลัมน์ RSI_M15, RSI_M5, RSI_M1, Multi_TF_Compliant แม้ว่าโค้ดจะมี Multi-TF RSI functionality
+
+**สาเหตุหลัก:** Execute_Trade() ไม่ได้เรียก Log_Trade_Execution_Basic() หลังจาก execute order สำเร็จ
+
+**วิธีแก้ไข:**
+```mql5
+// ใน Execute_Trade() หลังจาก execute order สำเร็จ
+if(modify_sent && modify_result.retcode == TRADE_RETCODE_DONE)
+{
+    Print("✅ STEP 2 SUCCESS: SL/TP set successfully!");
+    
+    // เพิ่มบรรทัดนี้ - Log successful trade execution to CSV with RSI data
+    Log_Trade_Execution_Basic(order_type, Symbol(), result.price, lot_size, result.order,
+                            rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
+    
+    return true;
+}
+```
+
+**วิธีตรวจสอบ Data Flow:**
+1. Execute_Trade() → เก็บ Multi-TF RSI data
+2. Log_Execution_Attempt() → บันทึก basic log  
+3. Log_Trade_Execution_Basic() → สร้าง ExecutionHistory.csv พร้อม RSI columns
+
+### **ปัญหา: Summary_Report.csv Mixed Format ทำให้ Excel อ่านไม่ได้**
+
+**ปัญหา:** Summary_Report.csv ผสม free text กับ CSV format ทำให้ไฟล์มี "จำนวนฟิลด์ไม่เท่ากัน" และ Excel เปิดไม่ได้
+
+**ตัวอย่างปัญหา:**
+```text
+BACKTEST SUMMARY REPORT          ← Free text (ไม่ใช่ CSV)
+Generated: 2025.01.14 23:59:59   ← Free text  
+=== TRADING PERFORMANCE ===      ← Free text
+Metric,Value                     ← เริ่ม CSV format
+Total Trades,331                 ← CSV format
+```
+
+**วิธีแก้ไข:** แปลงให้เป็น CSV format มาตรฐานทั้งหมด
+```mql5
+// แทนที่ free text headers ด้วย CSV format
+report += "Metric,Value\n";
+report += StringFormat("Report_Type,%s\n", "BACKTEST SUMMARY REPORT");
+report += StringFormat("Generated_Date,%s\n", TimeToString(TimeCurrent()));
+report += "Section,TRADING_PERFORMANCE\n";  // แทนที่ "=== TRADING PERFORMANCE ==="
+```
+
+### **ผลลัพธ์การทดสอบ Multi-TF RSI (2025-01-14)**
+
+**ความสำเร็จ:**
+- **BUY Orders:** 91 trades, 100% compliance (RSI < 35 ทั้ง M15, M5, M1)
+- **SELL Orders:** 75 trades, 100% compliance (RSI > 65 ทั้ง M15, M5, M1)  
+- **EA Flag vs Manual Check:** 100% match (FP=0, FN=0)
+
+### **บทเรียนสำคัญ:**
+
+1. **Data Flow Verification** - ตรวจสอบ chain ให้ครบทุกขั้นตอน: Execute → Log → CSV
+2. **CSV Format Standards** - ใช้ "Metric,Value" format ตลอดทั้งไฟล์, ห้ามผสม free text
+3. **File Relationship Mapping** - ExecutionHistory.csv vs Executions_BACKTEST.csv ใช้งานต่างกัน ไม่ซ้ำซ้อน
+4. **Independent Validation** - ใช้ข้อมูลดิบจากคอลัมน์ RSI เพื่อตรวจสอบ compliance อิสระจาก EA flag
+5. **Immediate Testing** - ทดสอบไฟล์ CSV ใน Excel ทันทีหลังสร้าง เพื่อตรวจสอบ format
+
+---
+
 **🎯 เอกสารนี้จะเป็นฐานความรู้สำหรับการพัฒนา EA ในอนาคต และจะถูกอัปเดตอย่างต่อเนื่องตามประสบการณ์ใหม่ๆ ที่ได้!**
 
 ---
 
-*สร้างโดย: EA Development Knowledge Base v2.0*
-*วันที่: มกราคม 2025*
-*อ้างอิง: ประสบการณ์การพัฒนา EA ทั้งหมด + Enhanced Logging System*
+*สร้างโดย: EA Development Knowledge Base v2.1*
+*วันที่: มกราคม 2025 (อัปเดตล่าสุด: 14 ม.ค. 2568)*
+*อ้างอิง: ประสบการณ์การพัฒนา EA ทั้งหมด + Enhanced Logging System + Multi-TF RSI Lessons*
 *สถานะ: เอกสารหลัก - ใช้สำหรับโปรเจ็คใหม่ทั้งหมด* 

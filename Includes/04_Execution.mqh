@@ -8,6 +8,7 @@
 //| Include necessary files                                          |
 //+------------------------------------------------------------------+
 #include "01_Parameters.mqh"
+#include "06_Logging.mqh"
 
 //+------------------------------------------------------------------+
 //| Trade Execution Functions                                        |
@@ -446,6 +447,35 @@ bool Execute_Trade(int order_type)
         return false;
     }
     
+    // Get Multi-Timeframe RSI data for logging
+    double rsi_m15, rsi_m5, rsi_m1;
+    bool multi_tf_rsi_available = Get_Multi_Timeframe_RSI(RSI_PERIOD, rsi_m15, rsi_m5, rsi_m1);
+    bool multi_tf_compliant = false;
+    
+    if(multi_tf_rsi_available)
+    {
+        if(order_type == ORDER_TYPE_BUY)
+        {
+            // BUY signals require all RSI < 35 (oversold condition)
+            multi_tf_compliant = (rsi_m15 < 35.0 && rsi_m5 < 35.0 && rsi_m1 < 35.0);
+        }
+        else if(order_type == ORDER_TYPE_SELL)
+        {
+            // SELL signals require all RSI > 65 (overbought condition)
+            multi_tf_compliant = (rsi_m15 > 65.0 && rsi_m5 > 65.0 && rsi_m1 > 65.0);
+        }
+        
+        Print("Multi-TF RSI Analysis: M15=", DoubleToString(rsi_m15, 2), 
+              ", M5=", DoubleToString(rsi_m5, 2), 
+              ", M1=", DoubleToString(rsi_m1, 2), 
+              ", Compliant=", (multi_tf_compliant ? "YES" : "NO"));
+    }
+    else
+    {
+        Print("WARNING: Unable to retrieve Multi-TF RSI data");
+        rsi_m15 = rsi_m5 = rsi_m1 = 0.0;
+    }
+    
     // Step 1: Calculate Stop Loss
     double stop_loss_price = Calculate_Stop_Loss(order_type);
     if(stop_loss_price <= 0)
@@ -525,10 +555,12 @@ bool Execute_Trade(int order_type)
     // Send the market order (STEP 1)
     bool order_sent = OrderSend(request, result);
     
-    // Log execution attempt
-    Log_Execution_Attempt(order_type, (order_sent && result.retcode == TRADE_RETCODE_DONE), 
+    // Log execution attempt with Multi-TF RSI data
+    bool execution_success = (order_sent && result.retcode == TRADE_RETCODE_DONE);
+    Log_Execution_Attempt(order_type, execution_success, 
                          stop_loss_price, take_profit_price, lot_size, price, 
-                         result.retcode, result.order, risk_percentage, risk_reward_ratio);
+                         result.retcode, result.order, risk_percentage, risk_reward_ratio,
+                         rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
     
     // Check result
     if(order_sent && result.retcode == TRADE_RETCODE_DONE)
@@ -566,6 +598,11 @@ bool Execute_Trade(int order_type)
             Print("  SL set to: ", modify_request.sl);
             Print("  TP set to: ", modify_request.tp);
             Print("🎯 COMPLETE SUCCESS: Trade executed with full risk management!");
+            
+            // Log successful trade execution to CSV with RSI data
+            Log_Trade_Execution_Basic(order_type, Symbol(), result.price, lot_size, result.order,
+                                    rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
+            
             return true;
         }
         else
@@ -577,8 +614,12 @@ bool Execute_Trade(int order_type)
             Print("  Intended SL: ", stop_loss_price);
             Print("  Intended TP: ", take_profit_price);
             
+            // Log successful trade execution to CSV with RSI data (even without SL/TP)
+            Log_Trade_Execution_Basic(order_type, Symbol(), result.price, lot_size, result.order,
+                                    rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
+            
             // Position is still open and profitable, just without automatic SL/TP
-            return true; // Consider this a success with warning
+            return true; // Consider success with warning
         }
     }
     else

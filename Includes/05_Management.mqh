@@ -5,6 +5,12 @@
 //+------------------------------------------------------------------+
 
 //+------------------------------------------------------------------+
+//| Include necessary files                                          |
+//+------------------------------------------------------------------+
+#include "01_Parameters.mqh"
+#include "06_Logging.mqh"
+
+//+------------------------------------------------------------------+
 //| Trade Management Functions                                       |
 //| Contains functions for managing open trades and positions       |
 //+------------------------------------------------------------------+
@@ -384,8 +390,8 @@ int Monitor_Closed_Trades()
                     int pos_deals = HistoryDealsTotal();
                     if(pos_deals >= 2) // Entry + Exit = closed trade
                     {
-                        Print("LOG: Found closed trade - Position ID: ", position_id, 
-                              " | Magic: ", deal_magic, 
+                        Print("LOG: Found closed trade - Position ID: ", position_id,
+                              " | Magic: ", deal_magic,
                               " | Symbol: ", deal_symbol,
                               " | Close Time: ", TimeToString(deal_time));
                         

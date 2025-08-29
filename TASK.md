@@ -44,7 +44,16 @@ P4.7	สร้าง Logic OnTick(): เรียกใช้ Check_Sell_Signal(
 P4.8	สร้าง Logic OnTick(): เรียกใช้ Execute_Trade()	With-Trend Pullback Strategy for XAUUSD.mq5	✅ Done	High	P4.6, P4.7, P2.6
 P4.9	สร้าง Logic OnTick(): เรียกใช้ Manage_Trailing_Stop()	With-Trend Pullback Strategy for XAUUSD.mq5	✅ Done	High	P4.5, P3.2
 P4.10	คอมไพล์โปรเจกต์ทั้งหมดและแก้ไข Error ที่เกิดจากการเชื่อมต่อไฟล์	N/A	✅ Done	High	P4.2, P4.3, P4.9
+PHASE 4.5: MULTI-TIMEFRAME RSI IMPLEMENTATION (STRATEGY COMPLIANCE FIX)
+P4.11	สร้างฟังก์ชัน Get_Multi_Timeframe_RSI() ใน 02_Analysis.mqh	Includes/02_Analysis.mqh	✅ Done	Critical	P4.10
+P4.12	สร้างฟังก์ชัน Is_Multi_TF_Oversold() ใน 02_Analysis.mqh	Includes/02_Analysis.mqh	✅ Done	Critical	P4.11
+P4.13	สร้างฟังก์ชัน Is_Multi_TF_Overbought() ใน 02_Analysis.mqh	Includes/02_Analysis.mqh	✅ Done	Critical	P4.11
+P4.14	แก้ไข Is_Buy_Pullback_Zone() ให้เรียกใช้ Multi-TF RSI	Includes/02_Analysis.mqh	✅ Done	Critical	P4.12
+P4.15	แก้ไข Is_Sell_Pullback_Zone() ให้เรียกใช้ Multi-TF RSI	Includes/02_Analysis.mqh	✅ Done	Critical	P4.13
+P4.16	ทดสอบคอมไพล์หลังแก้ไข Multi-TF RSI	N/A	✅ Done	Critical	P4.14, P4.15
+P4.17	แก้ไข Logging System ให้รองรับ Multi-TF RSI data	Includes/06_Logging_Multi_TF.mqh	✅ Done	High	P4.16
+P4.18	ทดสอบ Backtest แบบสั้นเพื่อตรวจสอบ Compliance Rate	N/A	To Do	Critical	P4.17
 PHASE 5: TESTING (FROM ORIGINAL TASK LIST)
-P5.1	ทดสอบ Backtesting ด้วย Strategy Tester	N/A	To Do	High	P4.10
+P5.1	ทดสอบ Backtesting ด้วย Strategy Tester	N/A	To Do	High	P4.18
 P5.2	ปรับจูนพารามิเตอร์ด้วย Optimization Module	N/A	To Do	High	P5.1
 P5.3	ทดสอบ Forward Testing บน Demo Account	N/A	To Do	High	P5.2

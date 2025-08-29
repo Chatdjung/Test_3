@@ -1177,7 +1177,7 @@ void Check_Buy_Signal_OnTick()
       Print("  ✓ H4 Bullish Pattern: ", (bullish_pattern ? "YES" : "NO"));
       
       // Log signal check to CSV
-      Log_Signal_Check("BUY", true, trend_bullish, pullback_zone, bullish_pattern);
+      Log_Signal_Check_Multi_TF("BUY", true, trend_bullish, pullback_zone, bullish_pattern);
       
       // Additional market timing validation
       if(Is_Good_Trading_Time())
@@ -1231,7 +1231,7 @@ void Check_Buy_Signal_OnTick()
          Print("  H4 Bullish Pattern: ", (bullish_pattern ? "✓" : "✗"));
          
          // Log failed signal check to CSV
-         Log_Signal_Check("BUY", false, trend_bullish, pullback_zone, bullish_pattern);
+         Log_Signal_Check_Multi_TF("BUY", false, trend_bullish, pullback_zone, bullish_pattern);
       }
    }
    
@@ -1385,7 +1385,7 @@ void Check_Sell_Signal_OnTick()
       Print("  ✓ H4 Bearish Pattern: ", (bearish_pattern ? "YES" : "NO"));
       
       // Log signal check to CSV
-      Log_Signal_Check("SELL", true, trend_bearish, pullback_zone, bearish_pattern);
+      Log_Signal_Check_Multi_TF("SELL", true, trend_bearish, pullback_zone, bearish_pattern);
       
       // Additional market timing validation
       if(Is_Good_Trading_Time())
@@ -1439,7 +1439,7 @@ void Check_Sell_Signal_OnTick()
          Print("  H4 Bearish Pattern: ", (bearish_pattern ? "✓" : "✗"));
          
          // Log failed signal check to CSV
-         Log_Signal_Check("SELL", false, trend_bearish, pullback_zone, bearish_pattern);
+         Log_Signal_Check_Multi_TF("SELL", false, trend_bearish, pullback_zone, bearish_pattern);
       }
    }
    

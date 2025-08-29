@@ -8,6 +8,7 @@
 //| Include necessary files                                          |
 //+------------------------------------------------------------------+
 #include "01_Parameters.mqh"
+#include "02_Analysis.mqh"
 
 //+------------------------------------------------------------------+
 //| Configuration - Logging System                                   |
@@ -541,7 +542,8 @@ bool Log_Signal_To_CSV(string signal_type, bool signal_result, bool trend_status
 bool Log_Execution_To_CSV(string order_type, bool execution_result, double calculated_sl, 
                          double calculated_tp, double calculated_lot, double execution_price, 
                          uint result_code, ulong ticket_number, double risk_percentage, 
-                         double risk_reward_ratio)
+                         double risk_reward_ratio, double rsi_m15 = 0.0, double rsi_m5 = 0.0, 
+                         double rsi_m1 = 0.0, bool multi_tf_compliant = false)
 {
     if(!USE_CSV_FORMAT)
         return true; // Skip CSV if not enabled
@@ -572,13 +574,14 @@ bool Log_Execution_To_CSV(string order_type, bool execution_result, double calcu
         string header = "DateTime" + CSV_SEPARATOR + "OrderType" + CSV_SEPARATOR + "ExecutionResult" + CSV_SEPARATOR + 
                        "Ticket" + CSV_SEPARATOR + "LotSize" + CSV_SEPARATOR + "ExecutionPrice" + CSV_SEPARATOR + 
                        "StopLoss" + CSV_SEPARATOR + "TakeProfit" + CSV_SEPARATOR + "RiskRewardRatio" + CSV_SEPARATOR + 
-                       "RiskPercentage" + CSV_SEPARATOR + "ResultCode" + CSV_SEPARATOR + "Symbol" + CSV_SEPARATOR + 
-                       "TestDate\n";
+                       "RiskPercentage" + CSV_SEPARATOR + "RSI_M15" + CSV_SEPARATOR + "RSI_M5" + CSV_SEPARATOR + 
+                       "RSI_M1" + CSV_SEPARATOR + "Multi_TF_Compliant" + CSV_SEPARATOR + "ResultCode" + CSV_SEPARATOR + 
+                       "Symbol" + CSV_SEPARATOR + "TestDate\n";
         FileWriteString(file_handle, header);
     }
     
-    // Write execution data
-    string csv_line = StringFormat("%s%s%s%s%s%s%I64u%s%.2f%s%.5f%s%.5f%s%.5f%s%.2f%s%.2f%s%u%s%s%s%s\n",
+    // Write execution data with RSI values
+    string csv_line = StringFormat("%s%s%s%s%s%s%I64u%s%.2f%s%.5f%s%.5f%s%.5f%s%.2f%s%.2f%s%.2f%s%.2f%s%.2f%s%s%s%u%s%s%s%s\n",
         TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS), CSV_SEPARATOR,
         order_type, CSV_SEPARATOR,
         (execution_result ? "SUCCESS" : "FAILED"), CSV_SEPARATOR,
@@ -589,6 +592,10 @@ bool Log_Execution_To_CSV(string order_type, bool execution_result, double calcu
         calculated_tp, CSV_SEPARATOR,
         risk_reward_ratio, CSV_SEPARATOR,
         risk_percentage, CSV_SEPARATOR,
+        rsi_m15, CSV_SEPARATOR,
+        rsi_m5, CSV_SEPARATOR,
+        rsi_m1, CSV_SEPARATOR,
+        (multi_tf_compliant ? "YES" : "NO"), CSV_SEPARATOR,
         result_code, CSV_SEPARATOR,
         Symbol(), CSV_SEPARATOR,
         TimeToString(TimeCurrent(), TIME_DATE)
@@ -700,16 +707,15 @@ bool Generate_Backtest_Summary_Report()
     // Create comprehensive summary
     string report = "";
     
-    // Header
-    report += "BACKTEST SUMMARY REPORT\n";
-    report += "Generated: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "\n";
-    report += "Symbol: " + Symbol() + "\n";
-    report += "Magic Number: " + IntegerToString(MAGIC_NUMBER) + "\n";
-    report += "Test Period: " + TimeToString(start_time, TIME_DATE) + " to " + TimeToString(end_time, TIME_DATE) + "\n\n";
-    
-    // Trading Performance
-    report += "=== TRADING PERFORMANCE ===\n";
+    // CSV Header with metadata and performance metrics
     report += "Metric,Value\n";
+    report += StringFormat("Report_Type,%s\n", "BACKTEST SUMMARY REPORT");
+    report += StringFormat("Generated_Date,%s\n", TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS));
+    report += StringFormat("Symbol,%s\n", Symbol());
+    report += StringFormat("Magic_Number,%d\n", MAGIC_NUMBER);
+    report += StringFormat("Test_Period_Start,%s\n", TimeToString(start_time, TIME_DATE));
+    report += StringFormat("Test_Period_End,%s\n", TimeToString(end_time, TIME_DATE));
+    report += "Section,TRADING_PERFORMANCE\n";
     report += StringFormat("Total Trades,%d\n", total_trades);
     report += StringFormat("Winning Trades,%d\n", winning_trades);
     report += StringFormat("Losing Trades,%d\n", losing_trades);
@@ -724,23 +730,20 @@ bool Generate_Backtest_Summary_Report()
     report += StringFormat("Max Single Loss,%.2f\n", max_loss);
     report += StringFormat("Total Commission,%.2f\n", total_commission);
     report += StringFormat("Total Swap,%.2f\n", total_swap);
-    
-    report += "\n=== ACCOUNT INFORMATION ===\n";
+    report += "Section,ACCOUNT_INFORMATION\n";
     report += StringFormat("Initial Balance,%.2f\n", initial_balance);
     report += StringFormat("Final Balance,%.2f\n", current_balance);
     report += StringFormat("Current Equity,%.2f\n", current_equity);
     report += StringFormat("Return Percentage,%.2f%%\n", return_percentage);
-    
-    report += "\n=== RISK METRICS ===\n";
+    report += "Section,RISK_METRICS\n";
     double max_drawdown = 0.0; // You may want to calculate this properly
     report += StringFormat("Maximum Drawdown,%.2f\n", max_drawdown);
     report += StringFormat("Recovery Factor,%.2f\n", max_drawdown != 0 ? net_profit / max_drawdown : 0.0);
-    
-    report += "\n=== FILES GENERATED ===\n";
-    report += "Trade History: " + LOG_FILE_PREFIX + "TradeHistory.csv\n";
-    report += "Signal History: " + LOG_FILE_PREFIX + "SignalHistory.csv\n";
-    report += "Execution History: " + LOG_FILE_PREFIX + "ExecutionHistory.csv\n";
-    report += "Summary Report: " + summary_filename + "\n";
+    report += "Section,FILES_GENERATED\n";
+    report += StringFormat("Trade_History_File,%s\n", LOG_FILE_PREFIX + "TradeHistory.csv");
+    report += StringFormat("Signal_History_File,%s\n", LOG_FILE_PREFIX + "SignalHistory.csv");
+    report += StringFormat("Execution_History_File,%s\n", LOG_FILE_PREFIX + "ExecutionHistory.csv");
+    report += StringFormat("Summary_Report_File,%s\n", summary_filename);
     
     // Write report to file
     FileWriteString(file_handle, report);
@@ -1056,7 +1059,8 @@ bool Log_Signal_Check_Failure(string signal_type, string &failed_conditions[], i
 //+------------------------------------------------------------------+
 bool Log_Execution_Attempt(int order_type, bool execution_result, double calculated_sl, double calculated_tp, 
                           double calculated_lot, double execution_price, uint result_code, ulong ticket_number,
-                          double risk_percentage, double risk_reward_ratio)
+                          double risk_percentage, double risk_reward_ratio, 
+                          double rsi_m15 = 0.0, double rsi_m5 = 0.0, double rsi_m1 = 0.0, bool multi_tf_compliant = false)
 {
     if(order_type != ORDER_TYPE_BUY && order_type != ORDER_TYPE_SELL)
     {
@@ -1132,6 +1136,11 @@ bool Log_Execution_Attempt(int order_type, bool execution_result, double calcula
         "Position Value: %.2f\n" +
         "Risk Amount: %.2f\n" +
         "Risk Percentage: %.2f%%\n" +
+        "--- Multi-Timeframe RSI Analysis ---\n" +
+        "RSI M15: %.2f\n" +
+        "RSI M5: %.2f\n" +
+        "RSI M1: %.2f\n" +
+        "Multi-TF Compliant: %s\n" +
         "--- Execution Result ---\n" +
         "Return Code: %u\n" +
         "Result Description: %s\n" +
@@ -1157,6 +1166,10 @@ bool Log_Execution_Attempt(int order_type, bool execution_result, double calcula
         position_value,
         risk_amount,
         risk_percentage,
+        rsi_m15,
+        rsi_m5,
+        rsi_m1,
+        (multi_tf_compliant ? "YES" : "NO"),
         result_code,
         result_description,
         ticket_number,
@@ -1184,11 +1197,12 @@ bool Log_Execution_Attempt(int order_type, bool execution_result, double calcula
     string log_type = execution_result ? "ExecutionSuccess" : "ExecutionFailure";
     bool file_saved = Save_Log_To_File(log_message, log_type);
     
-    // Save to CSV for Excel analysis
+    // Save to CSV for Excel analysis with RSI data
     bool csv_saved = Log_Execution_To_CSV((order_type == ORDER_TYPE_BUY ? "BUY" : "SELL"),
                                          execution_result, calculated_sl, calculated_tp,
                                          calculated_lot, execution_price, result_code,
-                                         ticket_number, risk_percentage, risk_reward_ratio);
+                                         ticket_number, risk_percentage, risk_reward_ratio,
+                                         rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
     
     return (file_saved && csv_saved);
 }
@@ -1696,7 +1710,8 @@ bool Log_Entry_Signal_Basic(int order_type, string symbol)
 //| Parameters: order_type, symbol, entry_price, volume, ticket     |
 //| Returns: true if logging successful, false otherwise            |
 //+------------------------------------------------------------------+
-bool Log_Trade_Execution_Basic(int order_type, string symbol, double entry_price, double volume, ulong ticket)
+bool Log_Trade_Execution_Basic(int order_type, string symbol, double entry_price, double volume, ulong ticket,
+                              double rsi_m15 = 0.0, double rsi_m5 = 0.0, double rsi_m1 = 0.0, bool multi_tf_compliant = false)
 {
     string trade_type = (order_type == ORDER_TYPE_BUY) ? "BUY" : "SELL";
     datetime execution_time = TimeCurrent();
@@ -1729,13 +1744,19 @@ bool Log_Trade_Execution_Basic(int order_type, string symbol, double entry_price
         "Intended Price: %.5f\n" +
         "Slippage: %.1f pips\n" +
         "Spread at Execution: %.1f pips\n" +
+        "--- Multi-TF RSI ANALYSIS ---\n" +
+        "RSI M15: %.2f\n" +
+        "RSI M5: %.2f\n" +
+        "RSI M1: %.2f\n" +
+        "Multi-TF Compliant: %s\n" +
         "--- STATUS ---\n" +
         "Execution: SUCCESSFUL\n" +
         "Position: OPEN\n" +
         "======================",
         ticket, trade_type, symbol,
         TimeToString(execution_time, TIME_DATE|TIME_SECONDS),
-        entry_price, volume, intended_price, slippage_pips, spread_pips
+        entry_price, volume, intended_price, slippage_pips, spread_pips,
+        rsi_m15, rsi_m5, rsi_m1, (multi_tf_compliant ? "YES" : "NO")
     );
     
     // Print to log
@@ -1744,11 +1765,12 @@ bool Log_Trade_Execution_Basic(int order_type, string symbol, double entry_price
     // Save to file
     bool file_saved = Save_Log_To_File(log_message, "TradeExecution");
     
-    // Save execution data to CSV
-    string csv_data = StringFormat("%s,%I64u,%s,%s,%.5f,%.2f,%.1f,%.1f,%s",
+    // Save execution data to CSV  
+    string csv_data = StringFormat("%s,%I64u,%s,%s,%.5f,%.2f,%.1f,%.1f,%.2f,%.2f,%.2f,%s,%s",
         TimeToString(execution_time, TIME_DATE|TIME_SECONDS),
         ticket, symbol, trade_type, entry_price, volume, 
-        slippage_pips, spread_pips, "EXECUTED");
+        slippage_pips, spread_pips, rsi_m15, rsi_m5, rsi_m1, 
+        (multi_tf_compliant ? "YES" : "NO"), "EXECUTED");
         
     bool csv_saved = Log_Execution_To_CSV_Basic(csv_data);
     
@@ -1817,7 +1839,7 @@ bool Log_Execution_To_CSV_Basic(string csv_data)
     // Write header if new file
     if(!file_exists)
     {
-        string header = "ExecutionTime,Ticket,Symbol,Type,EntryPrice,Volume,SlippagePips,SpreadPips,Status";
+        string header = "ExecutionTime,Ticket,Symbol,Type,EntryPrice,Volume,SlippagePips,SpreadPips,RSI_M15,RSI_M5,RSI_M1,Multi_TF_Compliant,Status";
         FileWriteString(file_handle, header + "\n");
     }
     
@@ -1825,6 +1847,93 @@ bool Log_Execution_To_CSV_Basic(string csv_data)
     FileSeek(file_handle, 0, SEEK_END);
     FileWriteString(file_handle, csv_data + "\n");
     FileClose(file_handle);
+    
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Enhanced Log Signal Check with Multi-Timeframe RSI Data        |
+//| This function extends the original logging with Multi-TF RSI    |
+//+------------------------------------------------------------------+
+bool Log_Signal_Check_Multi_TF(string signal_type, bool signal_result, bool trend_status, bool pullback_status, bool pattern_status)
+{
+    if(signal_type != "BUY" && signal_type != "SELL")
+    {
+        Print("ERROR: Invalid signal type provided to Log_Signal_Check_Multi_TF: ", signal_type);
+        return false;
+    }
+    
+    // Get Multi-TF RSI data
+    double rsi_m15, rsi_m5, rsi_m1;
+    bool multi_tf_rsi_available = Get_Multi_Timeframe_RSI(RSI_PERIOD, rsi_m15, rsi_m5, rsi_m1);
+    
+    // Get current market data for context
+    double current_bid = SymbolInfoDouble(Symbol(), SYMBOL_BID);
+    double current_ask = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
+    double current_spread = current_ask - current_bid;
+    
+    // Convert spread to pips
+    double pip_size = SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+    if(SymbolInfoInteger(Symbol(), SYMBOL_DIGITS) == 5 || SymbolInfoInteger(Symbol(), SYMBOL_DIGITS) == 3)
+        pip_size *= 10;
+    double spread_pips = current_spread / pip_size;
+    
+    // Get additional market context
+    datetime current_time = TimeCurrent();
+    string timeframe_str = "H4";
+    
+    // Determine Multi-TF RSI status
+    bool multi_tf_oversold = false;
+    bool multi_tf_overbought = false;
+    string multi_tf_status = "N/A";
+    
+    if(multi_tf_rsi_available)
+    {
+        if(signal_type == "BUY")
+        {
+            multi_tf_oversold = (rsi_m15 < 35.0 && rsi_m5 < 35.0 && rsi_m1 < 35.0);
+            multi_tf_status = multi_tf_oversold ? "OVERSOLD (All < 35)" : "NOT OVERSOLD";
+        }
+        else if(signal_type == "SELL")
+        {
+            multi_tf_overbought = (rsi_m15 > 65.0 && rsi_m5 > 65.0 && rsi_m1 > 65.0);
+            multi_tf_status = multi_tf_overbought ? "OVERBOUGHT (All > 65)" : "NOT OVERBOUGHT";
+        }
+    }
+    
+    // Create enhanced signal analysis log
+    Print("=== ENHANCED SIGNAL CHECK LOG ===");
+    Print("Signal Type: ", signal_type);
+    Print("Signal Result: ", (signal_result ? "SIGNAL FOUND" : "NO SIGNAL"));
+    Print("Check Time: ", TimeToString(current_time, TIME_DATE|TIME_SECONDS));
+    Print("Symbol: ", Symbol());
+    Print("Timeframe: ", timeframe_str);
+    Print("Current Bid: ", DoubleToString(current_bid, 5));
+    Print("Current Ask: ", DoubleToString(current_ask, 5));
+    Print("Spread: ", DoubleToString(spread_pips, 1), " pips");
+    Print("--- Analysis Breakdown ---");
+    Print("1. Trend Analysis (D1): ", (trend_status ? "BULLISH/BEARISH" : "NO TREND"));
+    Print("2. Pullback Zone (H4): ", (pullback_status ? "IN ZONE" : "NOT IN ZONE"));  
+    Print("3. Pattern Confirmation (H4): ", (pattern_status ? "CONFIRMED" : "NO PATTERN"));
+    
+    if(multi_tf_rsi_available)
+    {
+        Print("--- Multi-Timeframe RSI Analysis ---");
+        Print("RSI M15: ", DoubleToString(rsi_m15, 2));
+        Print("RSI M5:  ", DoubleToString(rsi_m5, 2));
+        Print("RSI M1:  ", DoubleToString(rsi_m1, 2));
+        Print("Multi-TF Status: ", multi_tf_status);
+    }
+    else
+    {
+        Print("--- Multi-Timeframe RSI Analysis ---");
+        Print("Multi-TF RSI: ERROR - Unable to retrieve RSI data");
+    }
+    
+    Print("--- Signal Logic ---");
+    Print("Required: ALL conditions must be TRUE");
+    Print("Result: ", (signal_result ? "SIGNAL FOUND" : "NO SIGNAL"));
+    Print("================================");
     
     return true;
 }
