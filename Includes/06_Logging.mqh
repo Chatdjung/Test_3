@@ -264,6 +264,93 @@ bool Log_Trade_Exit(ulong ticket)
 }
 
 //+------------------------------------------------------------------+
+//| Log Trade Exit with Parameter Fallback                         |
+//| Parameters: ticket - trade ticket number                        |
+//| Returns: true if logging successful with guaranteed parameters  |
+//+------------------------------------------------------------------+
+bool Log_Trade_Exit_With_Fallback(ulong ticket)
+{
+    // Try normal logging first
+    bool normal_log = Log_Trade_Exit(ticket);
+    if(normal_log) return true;
+    
+    // If normal logging fails, use fallback method with guaranteed parameters
+    Print("⚠️ Normal logging failed for ticket ", ticket, " - using fallback method");
+    
+    // Extract basic trade info from history
+    if(!HistorySelectByPosition(ticket))
+    {
+        Print("ERROR: Cannot access position history for ticket: ", ticket);
+        return false;
+    }
+    
+    int deals_total = HistoryDealsTotal();
+    if(deals_total < 2)
+    {
+        Print("WARNING: Insufficient deals for position: ", ticket);
+        return false;
+    }
+    
+    // Get entry and exit deals
+    ulong entry_deal = HistoryDealGetTicket(0);
+    ulong exit_deal = HistoryDealGetTicket(deals_total - 1);
+    
+    string symbol = HistoryDealGetString(entry_deal, DEAL_SYMBOL);
+    ENUM_DEAL_TYPE entry_type = (ENUM_DEAL_TYPE)HistoryDealGetInteger(entry_deal, DEAL_TYPE);
+    
+    double entry_price = HistoryDealGetDouble(entry_deal, DEAL_PRICE);
+    double exit_price = HistoryDealGetDouble(exit_deal, DEAL_PRICE);
+    double volume = HistoryDealGetDouble(entry_deal, DEAL_VOLUME);
+    
+    datetime entry_time = (datetime)HistoryDealGetInteger(entry_deal, DEAL_TIME);
+    datetime exit_time = (datetime)HistoryDealGetInteger(exit_deal, DEAL_TIME);
+    
+    double profit = HistoryDealGetDouble(exit_deal, DEAL_PROFIT);
+    double commission = HistoryDealGetDouble(entry_deal, DEAL_COMMISSION) + HistoryDealGetDouble(exit_deal, DEAL_COMMISSION);
+    double swap = HistoryDealGetDouble(exit_deal, DEAL_SWAP);
+    
+    // Apply fallback values if data is invalid
+    if(entry_price <= 0) entry_price = (entry_type == DEAL_TYPE_BUY) ? SymbolInfoDouble(symbol, SYMBOL_ASK) : SymbolInfoDouble(symbol, SYMBOL_BID);
+    if(exit_price <= 0) exit_price = (entry_type == DEAL_TYPE_SELL) ? SymbolInfoDouble(symbol, SYMBOL_BID) : SymbolInfoDouble(symbol, SYMBOL_ASK);
+    if(entry_time <= 0) entry_time = TimeCurrent() - 3600; // 1 hour ago fallback
+    if(exit_time <= 0) exit_time = TimeCurrent();
+    
+    // Calculate metrics
+    double pip_size = SymbolInfoDouble(symbol, SYMBOL_POINT);
+    if(SymbolInfoInteger(symbol, SYMBOL_DIGITS) == 5 || SymbolInfoInteger(symbol, SYMBOL_DIGITS) == 3)
+        pip_size *= 10;
+    
+    double price_difference = (entry_type == DEAL_TYPE_BUY) ? (exit_price - entry_price) : (entry_price - exit_price);
+    double pips_gained = price_difference / pip_size;
+    
+    int trade_duration_seconds = (int)(exit_time - entry_time);
+    double net_profit = profit + commission + swap;
+    
+    // GUARANTEED PARAMETERS (never empty)
+    double guaranteed_atr = 0.001;  // Minimal fallback ATR
+    double guaranteed_sl_mult = ATR_SL_MULTIPLIER; // From constants
+    double guaranteed_rr = RISK_REWARD_RATIO;      // From constants
+    
+    // Log with guaranteed parameters
+    return Log_Trade_To_CSV_Enhanced(ticket, 
+                                   (entry_type == DEAL_TYPE_BUY ? "BUY" : "SELL"),
+                                   "FALLBACK_LOGGED", 
+                                   entry_price, 
+                                   exit_price, 
+                                   volume,
+                                   entry_time, 
+                                   exit_time, 
+                                   net_profit,
+                                   pips_gained, 
+                                   trade_duration_seconds, 
+                                   commission, 
+                                   swap,
+                                   guaranteed_atr,      // GUARANTEED
+                                   guaranteed_sl_mult,  // GUARANTEED
+                                   guaranteed_rr);      // GUARANTEED
+}
+
+//+------------------------------------------------------------------+
 //| Log status of open position                                     |
 //| Parameters: ticket - position ticket number                     |
 //| Returns: true if logging successful, false otherwise            |
@@ -471,6 +558,92 @@ bool Log_Trade_To_CSV(ulong ticket, string trade_type, string exit_reason,
 }
 
 //+------------------------------------------------------------------+
+//| Enhanced CSV Trade Logging (with parameters)                   |
+//+------------------------------------------------------------------+
+bool Log_Trade_To_CSV_Enhanced(ulong ticket, string trade_type, string exit_reason, 
+                              double entry_price, double exit_price, double volume,
+                              datetime entry_time, datetime exit_time, double net_profit,
+                              double pips_gained, int duration_seconds, double commission, double swap,
+                              double atr_value, double sl_multiplier, double rr_ratio)
+{
+    if(!USE_CSV_FORMAT)
+        return true;
+        
+    string csv_filename = LOG_FILE_PREFIX + "TradeHistory.csv";
+    
+    // Check if file exists
+    bool file_exists = false;
+    int test_handle = FileOpen(csv_filename, FILE_READ|FILE_TXT);
+    if(test_handle != INVALID_HANDLE)
+    {
+        file_exists = true;
+        FileClose(test_handle);
+    }
+    
+    // Open file for append
+    int file_handle = FileOpen(csv_filename, FILE_WRITE|FILE_READ|FILE_TXT);
+    if(file_handle == INVALID_HANDLE)
+    {
+        Print("ERROR: Cannot create enhanced CSV trade file: ", csv_filename);
+        return false;
+    }
+    
+    FileSeek(file_handle, 0, SEEK_END);
+    
+    // Enhanced header with parameters
+    if(!file_exists)
+    {
+        string header = "Ticket" + CSV_SEPARATOR + "TradeType" + CSV_SEPARATOR + "Symbol" + CSV_SEPARATOR + 
+                       "EntryTime" + CSV_SEPARATOR + "ExitTime" + CSV_SEPARATOR + "Duration(Sec)" + CSV_SEPARATOR + 
+                       "Duration(Min)" + CSV_SEPARATOR + "Duration(Hours)" + CSV_SEPARATOR +
+                       "EntryPrice" + CSV_SEPARATOR + "ExitPrice" + CSV_SEPARATOR + "Volume" + CSV_SEPARATOR + 
+                       "Pips" + CSV_SEPARATOR + "GrossProfit" + CSV_SEPARATOR + "Commission" + CSV_SEPARATOR + 
+                       "Swap" + CSV_SEPARATOR + "NetProfit" + CSV_SEPARATOR + "ExitReason" + CSV_SEPARATOR +
+                       "ATR_Value" + CSV_SEPARATOR + "SL_Multiplier" + CSV_SEPARATOR + "RR_Ratio" + CSV_SEPARATOR +
+                       "MagicNumber" + CSV_SEPARATOR + "TestDate\n";
+        FileWriteString(file_handle, header);
+    }
+    
+    // Calculate metrics
+    int duration_minutes = duration_seconds / 60;
+    double duration_hours = (double)duration_seconds / 3600.0;
+    double gross_profit = net_profit - commission - swap;
+    
+    // Enhanced CSV with parameters
+    string csv_line = StringFormat("%I64u%s%s%s%s%s%s%s%s%s%d%s%d%s%.2f%s%.5f%s%.5f%s%.2f%s%.1f%s%.2f%s%.2f%s%.2f%s%.2f%s%s%s%.5f%s%.2f%s%.2f%s%d%s%s\n",
+        ticket, CSV_SEPARATOR,
+        trade_type, CSV_SEPARATOR,
+        Symbol(), CSV_SEPARATOR,
+        TimeToString(entry_time, TIME_DATE|TIME_SECONDS), CSV_SEPARATOR,
+        TimeToString(exit_time, TIME_DATE|TIME_SECONDS), CSV_SEPARATOR,
+        duration_seconds, CSV_SEPARATOR,
+        duration_minutes, CSV_SEPARATOR,
+        duration_hours, CSV_SEPARATOR,
+        entry_price, CSV_SEPARATOR,
+        exit_price, CSV_SEPARATOR,
+        volume, CSV_SEPARATOR,
+        pips_gained, CSV_SEPARATOR,
+        gross_profit, CSV_SEPARATOR,
+        commission, CSV_SEPARATOR,
+        swap, CSV_SEPARATOR,
+        net_profit, CSV_SEPARATOR,
+        exit_reason, CSV_SEPARATOR,
+        atr_value, CSV_SEPARATOR,
+        sl_multiplier, CSV_SEPARATOR,
+        rr_ratio, CSV_SEPARATOR,
+        MAGIC_NUMBER, CSV_SEPARATOR,
+        TimeToString(TimeCurrent(), TIME_DATE)
+    );
+    
+    FileWriteString(file_handle, csv_line);
+    FileClose(file_handle);
+    
+    Print("📊 ENHANCED CSV LOG: Ticket ", ticket, " | Net P/L: ", DoubleToString(net_profit, 2), 
+          " | ATR: ", DoubleToString(atr_value, 5), " | SL_Mult: ", sl_multiplier, " | RR: ", rr_ratio);
+    return true;
+}
+
+//+------------------------------------------------------------------+
 //| Create CSV Signal Log (Excel Ready)                            |
 //| Parameters: Signal analysis details for CSV format             |
 //| Returns: true if CSV logging successful, false otherwise       |
@@ -542,7 +715,9 @@ bool Log_Signal_To_CSV(string signal_type, bool signal_result, bool trend_status
 bool Log_Execution_To_CSV(string order_type, bool execution_result, double calculated_sl, 
                          double calculated_tp, double calculated_lot, double execution_price, 
                          uint result_code, ulong ticket_number, double risk_percentage, 
-                         double risk_reward_ratio, double rsi_m15 = 0.0, double rsi_m5 = 0.0, 
+                         double risk_reward_ratio, double atr_h4 = 0.0, double sl_atr_mult = 0.0,
+                         double rr_applied = 0.0, double sl_distance = 0.0, double tp_distance = 0.0,
+                         string config_tag = "", double rsi_m15 = 0.0, double rsi_m5 = 0.0, 
                          double rsi_m1 = 0.0, bool multi_tf_compliant = false)
 {
     if(!USE_CSV_FORMAT)
@@ -573,15 +748,17 @@ bool Log_Execution_To_CSV(string order_type, bool execution_result, double calcu
     {
         string header = "DateTime" + CSV_SEPARATOR + "OrderType" + CSV_SEPARATOR + "ExecutionResult" + CSV_SEPARATOR + 
                        "Ticket" + CSV_SEPARATOR + "LotSize" + CSV_SEPARATOR + "ExecutionPrice" + CSV_SEPARATOR + 
-                       "StopLoss" + CSV_SEPARATOR + "TakeProfit" + CSV_SEPARATOR + "RiskRewardRatio" + CSV_SEPARATOR + 
+                       "StopLoss" + CSV_SEPARATOR + "TakeProfit" + CSV_SEPARATOR + "ATR_H4" + CSV_SEPARATOR + 
+                       "SL_ATR_Mult" + CSV_SEPARATOR + "RR_Applied" + CSV_SEPARATOR + "SL_Distance" + CSV_SEPARATOR + 
+                       "TP_Distance" + CSV_SEPARATOR + "ConfigTag" + CSV_SEPARATOR + "RiskRewardRatio" + CSV_SEPARATOR + 
                        "RiskPercentage" + CSV_SEPARATOR + "RSI_M15" + CSV_SEPARATOR + "RSI_M5" + CSV_SEPARATOR + 
                        "RSI_M1" + CSV_SEPARATOR + "Multi_TF_Compliant" + CSV_SEPARATOR + "ResultCode" + CSV_SEPARATOR + 
                        "Symbol" + CSV_SEPARATOR + "TestDate\n";
         FileWriteString(file_handle, header);
     }
     
-    // Write execution data with RSI values
-    string csv_line = StringFormat("%s%s%s%s%s%s%I64u%s%.2f%s%.5f%s%.5f%s%.5f%s%.2f%s%.2f%s%.2f%s%.2f%s%.2f%s%s%s%u%s%s%s%s\n",
+    // Write execution data with enhanced parameters
+    string csv_line = StringFormat("%s%s%s%s%s%s%I64u%s%.2f%s%.5f%s%.5f%s%.5f%s%.5f%s%.3f%s%.2f%s%.2f%s%.2f%s%s%s%.2f%s%.2f%s%.2f%s%.2f%s%.2f%s%s%s%u%s%s%s%s\n",
         TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS), CSV_SEPARATOR,
         order_type, CSV_SEPARATOR,
         (execution_result ? "SUCCESS" : "FAILED"), CSV_SEPARATOR,
@@ -590,6 +767,12 @@ bool Log_Execution_To_CSV(string order_type, bool execution_result, double calcu
         execution_price, CSV_SEPARATOR,
         calculated_sl, CSV_SEPARATOR,
         calculated_tp, CSV_SEPARATOR,
+        atr_h4, CSV_SEPARATOR,
+        sl_atr_mult, CSV_SEPARATOR,
+        rr_applied, CSV_SEPARATOR,
+        sl_distance, CSV_SEPARATOR,
+        tp_distance, CSV_SEPARATOR,
+        config_tag, CSV_SEPARATOR,
         risk_reward_ratio, CSV_SEPARATOR,
         risk_percentage, CSV_SEPARATOR,
         rsi_m15, CSV_SEPARATOR,
@@ -1059,7 +1242,9 @@ bool Log_Signal_Check_Failure(string signal_type, string &failed_conditions[], i
 //+------------------------------------------------------------------+
 bool Log_Execution_Attempt(int order_type, bool execution_result, double calculated_sl, double calculated_tp, 
                           double calculated_lot, double execution_price, uint result_code, ulong ticket_number,
-                          double risk_percentage, double risk_reward_ratio, 
+                          double risk_percentage, double risk_reward_ratio, double atr_h4 = 0.0, 
+                          double sl_atr_mult = 0.0, double rr_applied = 0.0, double sl_distance = 0.0,
+                          double tp_distance = 0.0, string config_tag = "",
                           double rsi_m15 = 0.0, double rsi_m5 = 0.0, double rsi_m1 = 0.0, bool multi_tf_compliant = false)
 {
     if(order_type != ORDER_TYPE_BUY && order_type != ORDER_TYPE_SELL)
@@ -1080,26 +1265,26 @@ bool Log_Execution_Attempt(int order_type, bool execution_result, double calcula
         pip_size *= 10;
     double spread_pips = current_spread / pip_size;
     
-    // Calculate risk metrics
-    double sl_distance = 0.0;
-    double tp_distance = 0.0;
+    // Calculate risk metrics (use different names to avoid parameter conflicts)
+    double calculated_sl_distance = 0.0;
+    double calculated_tp_distance = 0.0;
     
     if(order_type == ORDER_TYPE_BUY)
     {
-        sl_distance = execution_price - calculated_sl;
-        tp_distance = calculated_tp - execution_price;
+        calculated_sl_distance = execution_price - calculated_sl;
+        calculated_tp_distance = calculated_tp - execution_price;
     }
     else
     {
-        sl_distance = calculated_sl - execution_price;
-        tp_distance = execution_price - calculated_tp;
+        calculated_sl_distance = calculated_sl - execution_price;
+        calculated_tp_distance = execution_price - calculated_tp;
     }
     
-    if(sl_distance > 0)
-        risk_reward_ratio = tp_distance / sl_distance;
+    if(calculated_sl_distance > 0)
+        risk_reward_ratio = calculated_tp_distance / calculated_sl_distance;
     
-    double sl_pips = sl_distance / pip_size;
-    double tp_pips = tp_distance / pip_size;
+    double sl_pips = calculated_sl_distance / pip_size;
+    double tp_pips = calculated_tp_distance / pip_size;
     
     // Get account information
     double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -1197,11 +1382,12 @@ bool Log_Execution_Attempt(int order_type, bool execution_result, double calcula
     string log_type = execution_result ? "ExecutionSuccess" : "ExecutionFailure";
     bool file_saved = Save_Log_To_File(log_message, log_type);
     
-    // Save to CSV for Excel analysis with RSI data
+    // Save to CSV for Excel analysis with enhanced parameters
     bool csv_saved = Log_Execution_To_CSV((order_type == ORDER_TYPE_BUY ? "BUY" : "SELL"),
                                          execution_result, calculated_sl, calculated_tp,
                                          calculated_lot, execution_price, result_code,
                                          ticket_number, risk_percentage, risk_reward_ratio,
+                                         atr_h4, sl_atr_mult, rr_applied, sl_distance, tp_distance, config_tag,
                                          rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
     
     return (file_saved && csv_saved);

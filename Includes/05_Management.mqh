@@ -395,8 +395,8 @@ int Monitor_Closed_Trades()
                               " | Symbol: ", deal_symbol,
                               " | Close Time: ", TimeToString(deal_time));
                         
-                        // Log the closed trade
-                        bool logged = Log_Trade_Exit(position_id);
+                        // Log the closed trade with fallback parameters
+                        bool logged = Log_Trade_Exit_With_Fallback(position_id);
                         if(logged)
                         {
                             // Add to logged positions list
@@ -405,7 +405,7 @@ int Monitor_Closed_Trades()
                             logged_count++;
                             closed_trades_logged++;
                             
-                            Print("✅ Successfully logged closed trade: ", position_id);
+                            Print("✅ Successfully logged closed trade with parameters: ", position_id);
                         }
                         else
                         {

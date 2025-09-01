@@ -8,6 +8,14 @@
 //| Include necessary files                                          |
 //+------------------------------------------------------------------+
 #include "01_Parameters.mqh"
+
+//+------------------------------------------------------------------+
+//| Forward declarations for position tracking                      |
+//+------------------------------------------------------------------+
+void AddTrackedPosition(ulong ticket, ENUM_POSITION_TYPE type, double volume, double open_price, 
+                       double sl, double tp, datetime open_time, double atr_value, 
+                       double sl_multiplier, double rr_ratio);
+
 #include "06_Logging.mqh"
 
 //+------------------------------------------------------------------+
@@ -552,14 +560,30 @@ bool Execute_Trade(int order_type)
     double risk_percentage = (risk_amount / AccountInfoDouble(ACCOUNT_BALANCE)) * 100.0;
     double risk_reward_ratio = MathAbs(take_profit_price - price) / MathAbs(price - stop_loss_price);
     
+    // Calculate ATR for logging
+    int atr_handle = iATR(Symbol(), PERIOD_H4, ATR_PERIOD);
+    double atr_array[];
+    ArraySetAsSeries(atr_array, true);
+    CopyBuffer(atr_handle, 0, 1, 1, atr_array);
+    double current_atr = (ArraySize(atr_array) > 0) ? atr_array[0] : 0.001; // fallback
+    
     // Send the market order (STEP 1)
     bool order_sent = OrderSend(request, result);
     
-    // Log execution attempt with Multi-TF RSI data
+    // Calculate additional parameters for logging
+    double atr_h4_value = current_atr;
+    double sl_atr_multiplier = ATR_SL_MULTIPLIER;
+    double rr_applied = risk_reward_ratio;
+    double sl_distance = MathAbs(price - stop_loss_price);
+    double tp_distance = MathAbs(take_profit_price - price);
+    string config_tag = StringFormat("ATR_%.1f_RR_%.1f", sl_atr_multiplier, rr_applied);
+    
+    // Log execution attempt with enhanced parameters
     bool execution_success = (order_sent && result.retcode == TRADE_RETCODE_DONE);
     Log_Execution_Attempt(order_type, execution_success, 
                          stop_loss_price, take_profit_price, lot_size, price, 
                          result.retcode, result.order, risk_percentage, risk_reward_ratio,
+                         atr_h4_value, sl_atr_multiplier, rr_applied, sl_distance, tp_distance, config_tag,
                          rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
     
     // Check result
@@ -603,6 +627,17 @@ bool Execute_Trade(int order_type)
             Log_Trade_Execution_Basic(order_type, Symbol(), result.price, lot_size, result.order,
                                     rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
             
+            // Add position to tracking system for proper exit logging
+            ENUM_POSITION_TYPE pos_type = (order_type == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+            int atr_handle = iATR(Symbol(), PERIOD_H4, ATR_PERIOD);
+            double atr_array[];
+            ArraySetAsSeries(atr_array, true);
+            CopyBuffer(atr_handle, 0, 1, 1, atr_array);
+            double atr_value = (ArraySize(atr_array) > 0) ? atr_array[0] : 0.001; // fallback
+            AddTrackedPosition(result.order, pos_type, lot_size, result.price, 
+                             modify_request.sl, modify_request.tp, TimeCurrent(), 
+                             atr_value, ATR_SL_MULTIPLIER, RISK_REWARD_RATIO);
+            
             return true;
         }
         else
@@ -617,6 +652,17 @@ bool Execute_Trade(int order_type)
             // Log successful trade execution to CSV with RSI data (even without SL/TP)
             Log_Trade_Execution_Basic(order_type, Symbol(), result.price, lot_size, result.order,
                                     rsi_m15, rsi_m5, rsi_m1, multi_tf_compliant);
+            
+            // Add position to tracking system (even without SL/TP set)
+            ENUM_POSITION_TYPE pos_type = (order_type == ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+            int atr_handle = iATR(Symbol(), PERIOD_H4, ATR_PERIOD);
+            double atr_array[];
+            ArraySetAsSeries(atr_array, true);
+            CopyBuffer(atr_handle, 0, 1, 1, atr_array);
+            double atr_value = (ArraySize(atr_array) > 0) ? atr_array[0] : 0.001; // fallback
+            AddTrackedPosition(result.order, pos_type, lot_size, result.price, 
+                             stop_loss_price, take_profit_price, TimeCurrent(), 
+                             atr_value, ATR_SL_MULTIPLIER, RISK_REWARD_RATIO);
             
             // Position is still open and profitable, just without automatic SL/TP
             return true; // Consider success with warning

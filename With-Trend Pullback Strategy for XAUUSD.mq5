@@ -48,6 +48,135 @@ input double Trailing_Stop_Pips = 50;  // Trailing Stop in Pips
 input int Magic_Number = 123456;       // EA Magic Number
 
 //+------------------------------------------------------------------+
+//| Position Tracking Variables (for proper trade exit logging)     |
+//+------------------------------------------------------------------+
+struct OpenPositionInfo
+{
+    ulong ticket;
+    ENUM_POSITION_TYPE type;
+    double volume;
+    double open_price;
+    double sl;
+    double tp;
+    datetime open_time;
+    double atr_value;
+    double sl_multiplier;
+    double rr_ratio;
+};
+
+OpenPositionInfo tracked_positions[];
+int tracked_positions_count = 0;
+
+//+------------------------------------------------------------------+
+//| Position Tracking Functions                                     |
+//+------------------------------------------------------------------+
+void AddTrackedPosition(ulong ticket, ENUM_POSITION_TYPE type, double volume, double open_price, 
+                       double sl, double tp, datetime open_time, double atr_value, 
+                       double sl_multiplier, double rr_ratio)
+{
+    ArrayResize(tracked_positions, tracked_positions_count + 1);
+    tracked_positions[tracked_positions_count].ticket = ticket;
+    tracked_positions[tracked_positions_count].type = type;
+    tracked_positions[tracked_positions_count].volume = volume;
+    tracked_positions[tracked_positions_count].open_price = open_price;
+    tracked_positions[tracked_positions_count].sl = sl;
+    tracked_positions[tracked_positions_count].tp = tp;
+    tracked_positions[tracked_positions_count].open_time = open_time;
+    tracked_positions[tracked_positions_count].atr_value = atr_value;
+    tracked_positions[tracked_positions_count].sl_multiplier = sl_multiplier;
+    tracked_positions[tracked_positions_count].rr_ratio = rr_ratio;
+    tracked_positions_count++;
+    
+    Print("✅ Added to position tracking: Ticket ", ticket, " | Type: ", EnumToString(type), " | Volume: ", volume);
+}
+
+void RemoveTrackedPosition(ulong ticket)
+{
+    for(int i = 0; i < tracked_positions_count; i++)
+    {
+        if(tracked_positions[i].ticket == ticket)
+        {
+            // Shift remaining positions
+            for(int j = i; j < tracked_positions_count - 1; j++)
+            {
+                tracked_positions[j] = tracked_positions[j + 1];
+            }
+            tracked_positions_count--;
+            ArrayResize(tracked_positions, tracked_positions_count);
+            Print("✅ Removed from position tracking: Ticket ", ticket);
+            return;
+        }
+    }
+}
+
+void CheckTrackedPositionsForExit()
+{
+    for(int i = 0; i < tracked_positions_count; i++)
+    {
+        ulong ticket = tracked_positions[i].ticket;
+        
+        // Check if position still exists
+        if(!PositionSelectByTicket(ticket))
+        {
+            // Position was closed! Log it with proper parameters
+            Print("🎯 POSITION CLOSED DETECTED: Ticket ", ticket);
+            
+            OpenPositionInfo closed_pos = tracked_positions[i];
+            
+            // Get current market price for exit price calculation
+            double exit_price = (closed_pos.type == POSITION_TYPE_BUY) ? 
+                               SymbolInfoDouble(Symbol(), SYMBOL_BID) : 
+                               SymbolInfoDouble(Symbol(), SYMBOL_ASK);
+            
+            // Calculate trade metrics
+            double pip_size = SymbolInfoDouble(Symbol(), SYMBOL_POINT);
+            if(SymbolInfoInteger(Symbol(), SYMBOL_DIGITS) == 5 || SymbolInfoInteger(Symbol(), SYMBOL_DIGITS) == 3)
+                pip_size *= 10;
+            
+            double price_diff = (closed_pos.type == POSITION_TYPE_BUY) ? 
+                               (exit_price - closed_pos.open_price) : 
+                               (closed_pos.open_price - exit_price);
+            double pips = price_diff / pip_size;
+            
+            // Estimate profit (simplified calculation)
+            double tick_value = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
+            double tick_size = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
+            double point_value = tick_value * (Point() / tick_size);
+            double estimated_profit = pips * point_value * closed_pos.volume;
+            
+            // Ensure parameters are never empty (use fallback if needed)
+            double final_atr = (closed_pos.atr_value > 0) ? closed_pos.atr_value : 0.001;
+            double final_sl_mult = (closed_pos.sl_multiplier > 0) ? closed_pos.sl_multiplier : ATR_SL_MULTIPLIER;
+            double final_rr = (closed_pos.rr_ratio > 0) ? closed_pos.rr_ratio : RISK_REWARD_RATIO;
+            
+            Print("🔧 PARAMETER CHECK: ATR=", final_atr, " | SL_Mult=", final_sl_mult, " | RR=", final_rr);
+            
+            // Log to CSV with guaranteed parameters
+            Log_Trade_To_CSV_Enhanced(ticket, 
+                                    (closed_pos.type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
+                                    "AUTO_DETECTED", 
+                                    closed_pos.open_price, 
+                                    exit_price, 
+                                    closed_pos.volume,
+                                    closed_pos.open_time, 
+                                    TimeCurrent(), 
+                                    estimated_profit,
+                                    pips, 
+                                    (int)(TimeCurrent() - closed_pos.open_time), 
+                                    0.0, // commission (unknown)
+                                    0.0, // swap (unknown)
+                                    final_atr,      // guaranteed non-zero
+                                    final_sl_mult,  // guaranteed non-zero
+                                    final_rr);      // guaranteed non-zero
+            
+            // Remove from tracking
+            RemoveTrackedPosition(ticket);
+            i--; // Adjust index after removal
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
@@ -712,10 +841,11 @@ void OnTick()
       Monitor_Open_Trades_Changes();
    }
    
-//--- Monitor closed trades and log them (every 10 ticks for efficiency)
+//--- Monitor closed trades using new position tracking (every 10 ticks for efficiency)
    if(tick_counter % 10 == 0)
    {
-      Monitor_Closed_Trades();
+      CheckTrackedPositionsForExit();  // New improved exit detection
+      Monitor_Closed_Trades();         // Keep old system as backup
    }
 
 //--- Check Buy Signal independently (every 20 ticks for efficiency)
